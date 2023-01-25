@@ -1,0 +1,6 @@
+*.ipynb
+*.html
+*.rds
+__pycache__
+.idea/
+.ipynb_checkpoints
