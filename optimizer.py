@@ -5,7 +5,7 @@ from sklearn.metrics import silhouette_score
 from sklearn.cluster import DBSCAN
 import tqdm
 import config as cfg
-from polygons import get_crs
+from data import get_crs
 from sklearn.metrics import euclidean_distances
 from shapely import geometry
 import geopandas as gpd
