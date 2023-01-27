@@ -68,6 +68,7 @@ class Optimizer():
 
     def fitness_func_anchorage(self):
         train = self.train
+        data = self.data[self.data.label == 1].copy()
         def fitness_function(solution, solution_idx):
             model = DBSCAN(min_samples=int(solution[0]), eps=float(solution[1]), metric='euclidean')
             model.fit(train)
@@ -77,7 +78,8 @@ class Optimizer():
                 return -99
             if np.isnan(score):
                 return -99
-            return score
+            ratio = self._get_area(data)
+            return score * ratio
         return fitness_function
 
 
@@ -99,11 +101,25 @@ class Optimizer():
         return fitness_function
 
 
+    def _get_area(self, df):
+        clusters = df.copy()
+        clusters.sort_values(by=['cluster'], ascending=[True], inplace=True)
+        clusters.reset_index(drop=True, inplace=True)
+        clusters = clusters[clusters.cluster!=-1]
+        gb = clusters.groupby('cluster')
+        areas = []
+        for y in gb.groups:
+            df0 = gb.get_group(y).copy()
+            point_collection = geometry.MultiPoint(list(df0['geometry']))
+            convex_hull_polygon = point_collection.convex_hull
+            weight = len(df0)/len(clusters)
+            areas.append(convex_hull_polygon.area*weight)
+        return np.sum(areas)
+
     def _get_length_width_ratio(self, df):
         clusters = df.copy()
         clusters.sort_values(by=['cluster'], ascending=[True], inplace=True)
         clusters.reset_index(drop=True, inplace=True)
-        poly_clusters = gpd.GeoDataFrame()
         clusters = clusters[clusters.cluster!=-1]
         gb = clusters.groupby('cluster')
         ratios = []
