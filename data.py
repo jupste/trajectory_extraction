@@ -5,15 +5,17 @@ from preprocess import load_and_harmonize
 from scipy.stats import circstd, circmean
 import numpy as np
 from shapely.geometry import Point, MultiPoint
-import pandas as pd 
-import numpy as np
-from preprocess import load_and_harmonize
-import geopandas as gpd
 
 class Data():
     def __init__(self, path, columns_names):
         data = load_and_harmonize(path, columns_names) # config?
         self.data = gpd.GeoDataFrame(data, geometry = gpd.points_from_xy(data.lon, data.lat), crs = 4326)
+        self._calculate_distances()
+
+    def _calculate_distances(self):
+        gdata = self.data.to_crs(get_crs(*self.data[['lon', 'lat']].values))
+        self.data['distance'] = gdata.distance(gdata.shift())
+
 
     def include_polygons(self, polygons, labels):
         self.data[labels] = -1
@@ -77,7 +79,10 @@ class Points():
         
     def _calculate_area_of_interest(self, df):
         d = df.copy()
-        d['area_of_interest'] = ((d.speed<self.speed_thresh) & (d.speed.shift()>=self.speed_thresh)) | ((d.speed>=self.speed_thresh) & (d.speed.shift()<self.speed_thresh)) |  (d.mmsi!=d.mmsi.shift()) | (d.t.diff() > self.time_thresh)
+        # todo: halutaanko joku aika threshold myös?
+        d['area_of_interest'] = (d.mmsi!=d.mmsi.shift()) | (d.distance > 200) | ((d.speed<self.speed_thresh) & (d.speed.shift()>=self.speed_thresh)) | ((d.speed>=self.speed_thresh) & (d.speed.shift()<self.speed_thresh))
+        # mahdollisesti jos halutaan pelata vain nav numeilla
+        # d['area_of_interest'] = (d.mmsi!=d.mmsi.shift()) | (d.status != d.status.shift())
         d['aoi_num'] = d.area_of_interest.cumsum()
         return d
 
@@ -109,6 +114,32 @@ class Points():
 
     def add_mooring_labels(self, model):
         self.mooring_points['cluster'] = model.labels_
+
+
+class Trajectories():
+    def __init__(self, data):
+        self.data = data
+        self.aggregate_data = self._aggregate_points()
+        self.trajectories = self._calculate_trajectories()
+
+
+    def _aggregate_points(self):
+        data = self.data
+        points_of_interest = data[((data.anchorage != -1) & (data.status==1) | (data.mooring != -1) & (data.status==5)) ]
+        points_of_interest['change'] = ((points_of_interest.anchorage != points_of_interest.anchorage.diff()) | points_of_interest.mooring != points_of_interest.mooring.diff() | points_of_interest.mmsi != points_of_interest.mmsi.diff())
+        points_of_interest['event_number'] = points_of_interest['change'].cumsum()
+        points_of_interest['next_moor'] = points_of_interest.mooring.shift(-1)
+        return points_of_interest
+
+    def _calculate_trajectories(self):
+        gb = self.aggregate_data.groupby('event_number')
+        trajectories_df = pd.DataFrame(columns = ['departure_anchorage', 'arrival_moor', 'shiptype', 'arrival_time']) 
+        trajectories_df.departure_anchorage = gb.departure_anchorage.median()
+        trajectories_df.arrival_moor = gb.next_moor.max()
+        trajectories_df.shiptype = gb.shiptype.max()
+        trajectories_df.arrival_time = gb.t.min()
+
+
 
 def get_crs(lon, lat):
     utm_zone = utm.from_latlon(lat, lon)

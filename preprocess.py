@@ -55,5 +55,6 @@ def load_and_harmonize(filepath, columns_names= {'sourcemmsi':'mmsi', 'speedover
         "t": 'int64'})
     df.drop_duplicates(['mmsi', 't'], inplace=True)
     df.dropna(subset='heading', inplace = True)
-    return df.sort_values(['mmsi', 't'])
+    df.sort_values(['mmsi', 't'], inplace = True)
+    return df
 
