@@ -9,6 +9,8 @@ from data import get_crs
 from sklearn.metrics import euclidean_distances
 from shapely import geometry
 import geopandas as gpd
+from hdbscan.validity import validity_index
+
 
 class Optimizer():
     def __init__(self, data):
@@ -20,6 +22,11 @@ class Optimizer():
         self.train = None
 
     def fit_to_genetical(self, fitness_func):
+        '''
+        Fit data to genetical algorithm.
+        :param fitness_func: fitness function used in the optimizing process
+        :return:
+        '''
         num_genes=2
         num_generations=200
         with tqdm.tqdm(total=num_generations, desc="[Optimizing with genetic algorithm]") as pbar:
@@ -42,6 +49,11 @@ class Optimizer():
         return ga_instance
 
     def generate_mooring_model(self):
+        '''
+        Generates the mooring model for the class object. Calculates the custom distances and changes the coordinates to
+        Universal Traverse Mercator projection
+        :return:
+        '''
         df = self.data[self.data.label==5].copy()
         df = df[~df.heading.isna()]
         df.to_crs(get_crs(*df.iloc[0][['lat','lon']].values), inplace=True)
@@ -50,11 +62,16 @@ class Optimizer():
         coords = df[['lat_utm', 'lon_utm']].values
         penalty_matrix = self._heading_penalty_matrix(df.heading.values)
         dist = euclidean_distances(coords)
-        self.train = dist+penalty_matrix
+        self.train = dist + penalty_matrix
         ga = self.fit_to_genetical(self.fitness_func_mooring())
         self.mooring_model = DBSCAN(eps = int(ga.best_solution()[0][1]), min_samples=int(ga.best_solution()[0][0]), metric='precomputed').fit(self.train)
     
     def generate_anchorage_model(self):
+        '''
+        Generates the anchorage model for the class object. Changes the coordinates to Universal Traverse Mercator
+        projection
+        :return:
+        '''
         df = self.data[self.data.label==1].copy()
         df.to_crs(get_crs(*df.iloc[0][['lat','lon']].values), inplace=True)
         df['lat_utm'] = df.geometry.y
@@ -67,19 +84,23 @@ class Optimizer():
 
 
     def fitness_func_anchorage(self):
+        '''
+        Fitness function for the anchorage model. Optimizes the DBCV score
+        :return: fitness function
+        '''
         train = self.train
         data = self.data[self.data.label == 1].copy()
         def fitness_function(solution, solution_idx):
             model = DBSCAN(min_samples=int(solution[0]), eps=float(solution[1]), metric='euclidean')
             model.fit(train)
             try:
-                score = silhouette_score(self.train, model.labels_, metric = 'euclidean')
+                score = validity_index(self.train, model.labels_, metric = 'euclidean')
             except:
                 return -99
             if np.isnan(score):
                 return -99
-            ratio = self._get_area(data)
-            return score * ratio
+            #ratio = self._get_area(data)
+            return score #* ratio
         return fitness_function
 
 
@@ -97,7 +118,7 @@ class Optimizer():
                 return -99
             data['cluster'] = model.labels_
             ratio = self._get_length_width_ratio(data)
-            return score*ratio
+            return ratio * score
         return fitness_function
 
 
@@ -155,3 +176,14 @@ class Optimizer():
                 if self._absolute_angle_difference(directions[i], directions[j])>15:
                     dir_matrix[i][j] = 10000
         return dir_matrix
+    def _set_utm(self, data):
+        data = gpd.GeoDataFrame(data, geometry=gpd.points_from_xy(data.lon, data.lat), crs=4326)
+        utm_zone = utm.from_latlon(*data.iloc[0][['lat', 'lon']].values)
+        if utm_zone[3] > 'N':
+            epsg = '326'
+        else:
+            epsg = '327'
+        epsg = epsg + str(utm_zone[2])
+        return data.to_crs(f'epsg:{epsg}')
+
+
