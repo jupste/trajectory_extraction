@@ -128,7 +128,7 @@ class Points():
         # Filter out only areas of interest where the speed stays low for 1 hour or more    
         df2 = df[df.speed<self.speed_thresh].groupby('aoi_num').filter(lambda x: x.t.max()-x.t.min() >= 3600)
         groups = df2.groupby('aoi_num')
-        aoi_prediction = groups.apply(lambda x: 5 if circstd(x.heading.values, high = 360)<2 or x.speed.mean()==0.00 else 1)
+        aoi_prediction = groups.apply(lambda x: 5 if circstd(x.heading.values, high = 360)<1 else 1)
         df['predictive'] = df.aoi_num.map(aoi_prediction)
         g = df.groupby('aoi_num')
         coords = g[['lat', 'lon']].mean()

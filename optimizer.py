@@ -10,7 +10,7 @@ from sklearn.metrics import euclidean_distances
 from shapely import geometry
 import geopandas as gpd
 from hdbscan.validity import validity_index
-
+import utm
 
 class Optimizer():
     def __init__(self, data):
@@ -25,7 +25,7 @@ class Optimizer():
         '''
         Fit data to genetical algorithm.
         :param fitness_func: fitness function used in the optimizing process
-        :return:
+        :return: fitted genetic algorithm
         '''
         num_genes=2
         num_generations=200
@@ -41,7 +41,7 @@ class Optimizer():
                                 init_range_low=2,
                                 mutation_probability=0.5,
                                 fitness_func= fitness_func,
-                                stop_criteria='saturate_20',
+                                stop_criteria='saturate_75',
                                 suppress_warnings=True, 
                                 save_best_solutions=True,
                                 on_generation=lambda _: pbar.update(1))
@@ -105,6 +105,11 @@ class Optimizer():
 
 
     def fitness_func_mooring(self):
+        '''
+        Fitness function for the anchorage model. Optimizes the silhouette score and lenght/width ratio of clusters
+        :return: fitness function
+        '''
+
         train = self.train
         data = self.data[self.data.label == 5].copy()
         def fitness_function(solution, solution_idx):
@@ -123,6 +128,11 @@ class Optimizer():
 
 
     def _get_area(self, df):
+        '''
+        Auxiliary function to calculate the area of clusters in a polygon dataframe. Gives the area in square meters
+        :param df: polygon dataframe
+        :return: weighted sum of all the areas in the dataframe
+        '''
         clusters = df.copy()
         clusters.sort_values(by=['cluster'], ascending=[True], inplace=True)
         clusters.reset_index(drop=True, inplace=True)
@@ -138,6 +148,11 @@ class Optimizer():
         return np.sum(areas)
 
     def _get_length_width_ratio(self, df):
+        '''
+        Auxiliary function to calculate the length/width ratio of clusters in a polygon dataframe.
+        :param df: polygon dataframe
+        :return: weighted sum of ratios
+        '''
         clusters = df.copy()
         clusters.sort_values(by=['cluster'], ascending=[True], inplace=True)
         clusters.reset_index(drop=True, inplace=True)
@@ -163,6 +178,13 @@ class Optimizer():
         return np.sum(ratios)
 
     def _absolute_angle_difference(self, target, source):
+        '''
+        Auxiliary function to calculate absolut angle distances so that opposite angles are treated as equal e.g. 90
+        degrees and 270 give the same value
+        :param target: angle 1
+        :param source: angle 2
+        :return:
+        '''
         a = target - source
         a = np.abs((a + 180) % 360 - 180)
         b = target - source - 180
@@ -170,6 +192,12 @@ class Optimizer():
         return min(a,b)
 
     def _heading_penalty_matrix(self, directions):
+        '''
+        Calculate the heading penalty matrix for the algorithm. Gives a penalty to the distance if the absolute angle
+        difference differs by a set amount
+        :param directions: heading values
+        :return: penalty matrix of size nxn
+        '''
         dir_matrix = np.zeros([len(directions), len(directions)])
         for i in range(len(directions)):
             for j in range(len(directions)):
@@ -177,6 +205,12 @@ class Optimizer():
                     dir_matrix[i][j] = 10000
         return dir_matrix
     def _set_utm(self, data):
+        '''
+        Change the latlon coordinates to Universal Traverse Mercator projection. Projection number is derived from
+        coordinates of the dataframe
+        :param data: dataframe where the transformation is performed
+        :return:
+        '''
         data = gpd.GeoDataFrame(data, geometry=gpd.points_from_xy(data.lon, data.lat), crs=4326)
         utm_zone = utm.from_latlon(*data.iloc[0][['lat', 'lon']].values)
         if utm_zone[3] > 'N':

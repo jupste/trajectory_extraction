@@ -19,14 +19,9 @@ def add_clusters_to_data(gdf, polygons, cluster_type):
     clusters : GeoDataFrame
         AIS dataframe with cluster membership
     '''
-    gdf[cluster_type] = -1
-    for _, cluster in polygons[1:].iterrows():
-        geom = cluster.geometry
-        sindex = gdf.sindex
-        possible_matches_index = list(sindex.intersection(geom.bounds))
-        possible_matches = gdf.iloc[possible_matches_index]
-        precise_matches = possible_matches[possible_matches.intersects(geom)]
-        gdf.loc[precise_matches.index, cluster_type] = cluster.cluster_id
+    gdf = gdf.sjoin(polygons[polygons.cluster_id!=-1][['cluster_id', 'geometry']], how='left')
+    gdf.cluster_id.fillna(-1, inplace=True)
+    gdf.drop(columns = 'index_right', inplace=True)
     return gdf
 
 
@@ -34,7 +29,6 @@ def extract_trajectories(df):
     '''
     Extract trajectories between anchorages and mooring polygons from the data. Trajectory is defined as a linkage
     between an anchorage cluster and a mooring cluster.
-
 
     :param df: AIS dataframe with both mooring and anchorage cluster memberships attached
     :return: trajectory: dataframe that has all the trajectories. Note all columns are transferred from df to trajectory
